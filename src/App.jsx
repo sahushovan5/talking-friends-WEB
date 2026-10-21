@@ -8,6 +8,8 @@ import { ChatDrawer } from './components/ChatDrawer';
 import { ControlsBar } from './components/ControlsBar';
 import { SettingsModal } from './components/SettingsModal';
 import { AudioStreamsContainer } from './components/AudioStreamsContainer';
+import { YouTubeModal } from './components/YouTubeModal';
+import { YouTubePlayerCard } from './components/YouTubePlayerCard';
 
 export default function App() {
   const [inRoom, setInRoom] = useState(false);
@@ -23,6 +25,8 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState('');
   const [currentSocketId, setCurrentSocketId] = useState('');
   const [activeRooms, setActiveRooms] = useState([]);
+  const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+  const [activeVideo, setActiveVideo] = useState(null); // { videoId, title, broadcasterId, isBroadcaster, initialTime, initialIsPlaying }
   const tabId = useMemo(() => 'tab_' + Math.random().toString(36).substring(2, 9), []);
 
   // Check URL query param for direct navigation (?room=xyz or /room/xyz)
@@ -87,6 +91,13 @@ export default function App() {
       setIsChatOpen(false);
       setUnreadCount(0);
       setIsSettingsOpen(false);
+      setActiveVideo((current) => {
+        if (current?.isBroadcaster && socket && socket.connected && roomId) {
+          socket.emit('stop-youtube', { roomId });
+        }
+        return null;
+      });
+      setIsYouTubeModalOpen(false);
 
       // Clean URL without page reload
       if (window.history.pushState) {
@@ -292,6 +303,24 @@ export default function App() {
       setActiveRooms(roomsList || []);
     };
 
+    const onPeerYouTubeUpdated = ({ socketId: peerId, mediaState }) => {
+      setParticipants((prev) =>
+        prev.map((p) => (p.socketId === peerId ? { ...p, mediaState } : p))
+      );
+    };
+
+    const onPeerYouTubeStopped = ({ socketId: peerId }) => {
+      setParticipants((prev) =>
+        prev.map((p) => (p.socketId === peerId ? { ...p, mediaState: null } : p))
+      );
+      setActiveVideo((current) => {
+        if (current && current.broadcasterId === peerId) {
+          return null;
+        }
+        return current;
+      });
+    };
+
     socket.on('connect', onConnect);
     socket.on('room-created', onRoomCreated);
     socket.on('room-joined', onRoomJoined);
@@ -305,6 +334,8 @@ export default function App() {
     socket.on('new-message', onNewMessage);
     socket.on('chat-error', onChatError);
     socket.on('active-rooms-updated', onActiveRoomsUpdated);
+    socket.on('peer-youtube-updated', onPeerYouTubeUpdated);
+    socket.on('peer-youtube-stopped', onPeerYouTubeStopped);
 
     // Initial fetch of active rooms
     socket.emit('get-active-rooms', (res) => {
@@ -331,8 +362,59 @@ export default function App() {
       socket.off('new-message', onNewMessage);
       socket.off('chat-error', onChatError);
       socket.off('active-rooms-updated', onActiveRoomsUpdated);
+      socket.off('peer-youtube-updated', onPeerYouTubeUpdated);
+      socket.off('peer-youtube-stopped', onPeerYouTubeStopped);
     };
   }, [initLocalStream, setMutedForcefully]);
+
+  // Broadcaster name for active YouTube video
+  const activeBroadcasterName = useMemo(() => {
+    if (!activeVideo) return '';
+    if (activeVideo.isBroadcaster) return 'You';
+    const peer = participants.find((p) => p.socketId === activeVideo.broadcasterId);
+    return peer?.username || 'Peer';
+  }, [activeVideo, participants]);
+
+  // YouTube Watch Together Handlers
+  const handleStartYouTubeVideo = ({ videoId, title }) => {
+    setActiveVideo({
+      videoId,
+      title,
+      broadcasterId: currentSocketId,
+      isBroadcaster: true,
+      initialTime: 0,
+      initialIsPlaying: true
+    });
+  };
+
+  const handleTuneInYouTube = (peer) => {
+    if (!peer.mediaState) return;
+
+    // Calculate synchronized position factoring in elapsed time if playing
+    const elapsed = peer.mediaState.isPlaying
+      ? (Date.now() - (peer.mediaState.updatedAt || Date.now())) / 1000
+      : 0;
+    const currentPartTime = (Number(peer.mediaState.currentTime) || 0) + elapsed;
+
+    setActiveVideo({
+      videoId: peer.mediaState.videoId,
+      title: peer.mediaState.title,
+      broadcasterId: peer.socketId,
+      isBroadcaster: false,
+      initialTime: currentPartTime,
+      initialIsPlaying: peer.mediaState.isPlaying
+    });
+  };
+
+  const handleCloseYouTube = () => {
+    if (activeVideo?.isBroadcaster) {
+      const socket = getSocket();
+      if (socket && socket.connected && roomId) {
+        socket.emit('stop-youtube', { roomId });
+      }
+    }
+    setActiveVideo(null);
+  };
 
   // Create room action
   const handleCreateRoom = ({ username, maxParticipants }) => {
@@ -484,6 +566,8 @@ export default function App() {
           onToggleMuteSpeaking={handleToggleMuteSpeaking}
           onToggleMuteChat={handleToggleMuteChat}
           onCopyInvite={handleCopyInvite}
+          onTuneInYouTube={handleTuneInYouTube}
+          activeBroadcasterId={activeVideo?.broadcasterId}
         />
       </main>
 
@@ -514,6 +598,8 @@ export default function App() {
         onLeaveRoom={() => handleLeaveRoom(true)}
         isSpeakingLocal={isSpeakingLocal}
         isSpeakingDisabled={isSpeakingDisabled}
+        onOpenYouTube={() => setIsYouTubeModalOpen(true)}
+        hasActiveYouTube={Boolean(activeVideo)}
       />
 
       {/* Room Host Settings Modal */}
@@ -527,6 +613,20 @@ export default function App() {
         onKick={handleKickUser}
         onToggleMuteSpeaking={handleToggleMuteSpeaking}
         onToggleMuteChat={handleToggleMuteChat}
+      />
+
+      {/* YouTube Watch Together Modal & Player */}
+      <YouTubeModal
+        isOpen={isYouTubeModalOpen}
+        onClose={() => setIsYouTubeModalOpen(false)}
+        onSelectVideo={handleStartYouTubeVideo}
+      />
+      <YouTubePlayerCard
+        activeVideo={activeVideo}
+        broadcasterName={activeBroadcasterName}
+        onClose={handleCloseYouTube}
+        socket={getSocket()}
+        roomId={roomId}
       />
 
       {/* Audio Element stream attachments (hidden) */}

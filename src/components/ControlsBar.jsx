@@ -8,7 +8,8 @@ import {
   ChevronUp,
   Settings,
   Shield,
-  Volume2
+  Volume2,
+  Youtube
 } from 'lucide-react';
 
 export function ControlsBar({
@@ -24,7 +25,9 @@ export function ControlsBar({
   onOpenSettings,
   onLeaveRoom,
   isSpeakingLocal,
-  isSpeakingDisabled = false
+  isSpeakingDisabled = false,
+  onOpenYouTube,
+  hasActiveYouTube = false
 }) {
   const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
 
@@ -123,6 +126,23 @@ export function ControlsBar({
         </div>
 
         <div className="h-6 w-px bg-slate-800" />
+
+        {/* YouTube Watch Together Button */}
+        <button
+          onClick={onOpenYouTube}
+          className={`p-2.5 sm:px-3.5 sm:py-2.5 rounded-xl sm:rounded-full text-xs font-semibold flex items-center gap-2 transition-all active:scale-95 border ${
+            hasActiveYouTube
+              ? 'bg-red-600/20 border-red-500/40 text-red-400 shadow-md shadow-red-600/20'
+              : 'bg-slate-800/80 hover:bg-slate-700/80 text-red-400 hover:text-red-300 border-slate-700/60'
+          }`}
+          title="Watch YouTube Together"
+        >
+          <Youtube className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+          <span className="hidden sm:inline">YouTube</span>
+          {hasActiveYouTube && (
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+          )}
+        </button>
 
         {/* Chat Toggle Button */}
         <button

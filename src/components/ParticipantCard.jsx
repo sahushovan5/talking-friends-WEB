@@ -7,7 +7,9 @@ import {
   VolumeX,
   MessageSquareOff,
   UserX,
-  ShieldAlert
+  ShieldAlert,
+  Youtube,
+  Play
 } from 'lucide-react';
 
 // Generates consistent soft gradient background based on username string
@@ -36,14 +38,17 @@ export function ParticipantCard({
   currentUserId,
   onKick,
   onToggleMuteSpeaking,
-  onToggleMuteChat
+  onToggleMuteChat,
+  onTuneInYouTube,
+  isTunedIntoThisUser = false
 }) {
   const {
     socketId,
     username,
     isOwner: participantIsOwner,
     isMuted,
-    isChatMuted
+    isChatMuted,
+    mediaState
   } = participant;
 
   const initials = (username || 'U')
@@ -148,6 +153,25 @@ export function ParticipantCard({
         <p className="text-[11px] font-mono text-slate-500 truncate">
           {socketId.slice(0, 8)}...
         </p>
+
+        {/* YouTube Watch Together Badge */}
+        {mediaState && (
+          <button
+            onClick={() => onTuneInYouTube && onTuneInYouTube(participant)}
+            className={`mt-2.5 w-full py-1.5 px-2 rounded-xl text-[11px] font-semibold border flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 ${
+              isTunedIntoThisUser
+                ? 'bg-red-600 text-white border-red-500 shadow-red-600/30'
+                : 'bg-red-600/15 hover:bg-red-600/25 border-red-500/30 text-red-300 hover:text-white'
+            }`}
+            title={`Tune in to ${username}'s YouTube stream`}
+          >
+            <Youtube className="w-3.5 h-3.5 fill-current flex-shrink-0" />
+            <span className="truncate max-w-[120px]">
+              {isTunedIntoThisUser ? 'Synced & Watching' : mediaState.title || 'Watch Stream'}
+            </span>
+            {!isTunedIntoThisUser && <Play className="w-2.5 h-2.5 fill-current ml-0.5" />}
+          </button>
+        )}
       </div>
 
       {/* Host Quick Moderation Actions (on non-self peers) */}

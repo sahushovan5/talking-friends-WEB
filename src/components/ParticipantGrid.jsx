@@ -13,7 +13,9 @@ export function ParticipantGrid({
   onKick,
   onToggleMuteSpeaking,
   onToggleMuteChat,
-  onCopyInvite
+  onCopyInvite,
+  onTuneInYouTube,
+  activeBroadcasterId
 }) {
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-center">
@@ -23,6 +25,7 @@ export function ParticipantGrid({
             const isSelf = p.socketId === currentUserId;
             const isSpeaking = isSelf ? isSpeakingLocal : Boolean(speakingPeers[p.socketId]);
             const participantMuted = isSelf ? isLocalMuted : p.isMuted;
+            const isTunedIntoThisUser = activeBroadcasterId === p.socketId;
 
             return (
               <ParticipantCard
@@ -38,6 +41,8 @@ export function ParticipantGrid({
                 onKick={onKick}
                 onToggleMuteSpeaking={onToggleMuteSpeaking}
                 onToggleMuteChat={onToggleMuteChat}
+                onTuneInYouTube={onTuneInYouTube}
+                isTunedIntoThisUser={isTunedIntoThisUser}
               />
             );
           })}
