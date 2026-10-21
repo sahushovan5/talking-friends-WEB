@@ -18,12 +18,12 @@ import { extractYouTubeVideoId, SUGGESTED_VIDEOS } from '../utils/youtube';
 import { SIGNALING_SERVER_URL } from '../services/socket';
 
 const QUICK_SEARCH_CHIPS = [
-  'Agentic AI',
+  'English Music',
   'Lofi Hip Hop',
-  'Synthwave Chill',
-  'Deep Focus Music',
+  'Arijit Singh Songs',
+  'Romantic Songs',
   'Coffee Jazz',
-  'Coding Background'
+  'Hindi Old Songs'
 ];
 
 export function YouTubeModal({ isOpen, onClose, onSelectVideo, socket }) {
@@ -146,9 +146,6 @@ export function YouTubeModal({ isOpen, onClose, onSelectVideo, socket }) {
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
                 <span>Watch YouTube Together</span>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-semibold">
-                  Free4Talk Sync
-                </span>
               </h3>
               <p className="text-xs text-slate-400">
                 Search any YouTube video to stream and watch in real-time sync with room peers

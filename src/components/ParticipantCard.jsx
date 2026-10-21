@@ -40,7 +40,8 @@ export function ParticipantCard({
   onToggleMuteSpeaking,
   onToggleMuteChat,
   onTuneInYouTube,
-  isTunedIntoThisUser = false
+  isTunedIntoThisUser = false,
+  compact = false
 }) {
   const {
     socketId,
@@ -57,6 +58,102 @@ export function ParticipantCard({
     .join('')
     .toUpperCase()
     .slice(0, 2);
+
+  if (compact) {
+    return (
+      <div
+        className={`relative glass-card rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-2.5 transition-all duration-200 group border ${
+          isSpeaking
+            ? 'border-emerald-500 ring-2 ring-emerald-400/50 shadow-md shadow-emerald-500/10 bg-slate-900/80'
+            : 'border-slate-800 hover:border-slate-700 bg-slate-900/50'
+        }`}
+      >
+        {/* Left: Avatar with Speaking Pulse */}
+        <div className="relative flex-shrink-0">
+          {isSpeaking && !isMuted && (
+            <div className="absolute inset-0 -m-1 rounded-full border-2 border-emerald-400/80 animate-ping opacity-75 pointer-events-none" />
+          )}
+          <div
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr ${getAvatarGradient(
+              username
+            )} p-0.5 shadow-md ${isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
+          >
+            <div className="w-full h-full rounded-full bg-slate-900/90 flex items-center justify-center text-white text-xs sm:text-sm font-bold tracking-wider select-none">
+              {initials}
+            </div>
+          </div>
+        </div>
+
+        {/* Middle: Name, Badges & YouTube Sync */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h4 className="text-xs font-bold text-white truncate max-w-[100px] sm:max-w-[120px]" title={username}>
+              {username}
+            </h4>
+            {participantIsOwner && (
+              <span className="px-1 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-bold">
+                Host
+              </span>
+            )}
+            {isSelf && (
+              <span className="px-1 py-0.2 rounded bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[9px] font-semibold">
+                You
+              </span>
+            )}
+          </div>
+
+          {/* YouTube Streaming Status if active */}
+          {mediaState ? (
+            <button
+              onClick={() => onTuneInYouTube && onTuneInYouTube(participant)}
+              className={`mt-1 py-0.5 px-1.5 rounded-lg text-[10px] font-semibold border flex items-center gap-1 transition-all max-w-full ${
+                isTunedIntoThisUser
+                  ? 'bg-red-600 text-white border-red-500 shadow-sm'
+                  : 'bg-red-600/15 hover:bg-red-600/25 border-red-500/30 text-red-300 hover:text-white'
+              }`}
+              title={`Tune in to ${username}'s YouTube stream`}
+            >
+              <YouTubeIcon className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate max-w-[80px] sm:max-w-[100px]">
+                {isTunedIntoThisUser ? 'Watching' : mediaState.title || 'Stream'}
+              </span>
+              {!isTunedIntoThisUser && <Play className="w-2 h-2 fill-current ml-0.5" />}
+            </button>
+          ) : (
+            <p className="text-[10px] text-slate-500 font-mono truncate">
+              {socketId.slice(0, 6)}...
+            </p>
+          )}
+        </div>
+
+        {/* Right: Mic Status & Host Actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div
+            className={`w-6 h-6 rounded-md flex items-center justify-center border transition-all ${
+              isMuted
+                ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                : isSpeaking
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 animate-pulse'
+                : 'bg-slate-800 border-slate-700 text-slate-400'
+            }`}
+            title={isMuted ? 'Muted' : isSpeaking ? 'Speaking' : 'Mic Active'}
+          >
+            {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+          </div>
+
+          {isOwner && !isSelf && (
+            <button
+              onClick={() => onKick && onKick(socketId)}
+              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              title="Kick participant"
+            >
+              <UserX className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

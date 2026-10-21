@@ -16,17 +16,27 @@ export function YouTubePlayerCard({
   broadcasterName = 'Broadcaster',
   onClose,
   socket,
-  roomId
+  roomId,
+  isMinimized: isMinimizedProp,
+  onToggleMinimize,
+  embedded = false
 }) {
   if (!activeVideo || !activeVideo.videoId) return null;
 
   const playerRef = useRef(null);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimizedInternal, setIsMinimizedInternal] = useState(false);
+  const isMinimized = isMinimizedProp !== undefined ? isMinimizedProp : isMinimizedInternal;
+  const toggleMinimized = onToggleMinimize || (() => setIsMinimizedInternal((prev) => !prev));
   const [isPlayingLocal, setIsPlayingLocal] = useState(activeVideo.initialIsPlaying ?? true);
   const isBroadcaster = activeVideo.isBroadcaster;
 
-  // Broadcaster: Broadcast initial state on mount
+  // Reset readiness when videoId changes
+  useEffect(() => {
+    setIsPlayerReady(false);
+  }, [activeVideo.videoId]);
+
+  // Broadcaster: Broadcast initial state on mount or when videoId changes
   useEffect(() => {
     if (!isBroadcaster || !socket || !socket.connected || !roomId) return;
 
@@ -36,6 +46,14 @@ export function YouTubePlayerCard({
       title: activeVideo.title,
       currentTime: 0,
       isPlaying: true
+    });
+
+    socket.emit('youtube-player-action', {
+      roomId,
+      action: 'change-video',
+      videoId: activeVideo.videoId,
+      title: activeVideo.title,
+      currentTime: 0
     });
   }, [isBroadcaster, socket, roomId, activeVideo.videoId, activeVideo.title]);
 
@@ -113,6 +131,8 @@ export function YouTubePlayerCard({
 
     const handlePeerAction = (data) => {
       if (data.broadcasterId !== activeVideo.broadcasterId || !playerRef.current) return;
+      // If action specifies a videoId that does not match our current video, ignore until updated
+      if (data.videoId && data.videoId !== activeVideo.videoId) return;
 
       const targetTime = Number(data.currentTime) || 0;
 
@@ -133,6 +153,11 @@ export function YouTubePlayerCard({
       if (data.socketId !== activeVideo.broadcasterId || !playerRef.current || !data.mediaState) return;
 
       const media = data.mediaState;
+      // CRITICAL: If broadcaster has switched to a new videoId, ignore drift seek on the old video!
+      if (media.videoId && media.videoId !== activeVideo.videoId) {
+        return;
+      }
+
       // Calculate expected time factoring in elapsed transit time if playing
       const elapsed = media.isPlaying ? (Date.now() - media.updatedAt) / 1000 : 0;
       const expectedTime = (Number(media.currentTime) || 0) + elapsed;
@@ -167,7 +192,7 @@ export function YouTubePlayerCard({
       socket.off('peer-youtube-updated', handlePeerUpdated);
       socket.off('peer-youtube-stopped', handlePeerStopped);
     };
-  }, [isBroadcaster, socket, activeVideo.broadcasterId, onClose]);
+  }, [isBroadcaster, socket, activeVideo.broadcasterId, activeVideo.videoId, onClose]);
 
   const handleClosePlayer = () => {
     if (isBroadcaster && socket && socket.connected && roomId) {
@@ -188,25 +213,38 @@ export function YouTubePlayerCard({
     }
   };
 
+  const isFloatingPiP = !embedded || isMinimized;
+
   return (
     <div
-      className={`fixed z-40 transition-all duration-300 ${
-        isMinimized
-          ? 'bottom-24 right-4 sm:right-6 w-80 glass-panel rounded-2xl shadow-2xl overflow-hidden border border-slate-700/80'
-          : 'top-20 right-4 sm:right-6 w-[92vw] sm:w-[480px] md:w-[560px] glass-panel rounded-2xl shadow-2xl overflow-hidden border border-slate-700/80'
+      className={`transition-all duration-300 overflow-hidden ${
+        isFloatingPiP
+          ? 'fixed bottom-24 right-4 sm:right-6 z-40 w-80 sm:w-96 glass-panel rounded-2xl shadow-2xl border border-slate-700/80 bg-slate-950/95'
+          : 'w-full flex-1 flex flex-col glass-panel rounded-2xl lg:rounded-3xl border border-slate-700/80 shadow-2xl bg-slate-950/90 backdrop-blur-xl'
       }`}
     >
       {/* Top Bar */}
-      <div className="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1 rounded-lg bg-red-600/20 text-red-500">
-            <YouTubeIcon className="w-4 h-4 flex-shrink-0" />
+      <div
+        className={`bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3 ${
+          isFloatingPiP ? 'px-3 py-2' : 'px-4 sm:px-6 py-3'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-1 sm:p-1.5 rounded-lg bg-red-600/20 text-red-500 flex-shrink-0">
+            <YouTubeIcon className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
           </div>
           <div className="min-w-0">
-            <h4 className="text-xs font-bold text-white truncate max-w-[220px] sm:max-w-[280px]">
+            <h4
+              className={`font-bold text-white truncate ${
+                isFloatingPiP
+                  ? 'text-xs max-w-[170px]'
+                  : 'text-xs sm:text-sm lg:text-base max-w-[200px] sm:max-w-md lg:max-w-xl'
+              }`}
+              title={activeVideo.title}
+            >
               {activeVideo.title || 'YouTube Video'}
             </h4>
-            <div className="flex items-center gap-1.5 text-[10px]">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px]">
               {isBroadcaster ? (
                 <span className="text-indigo-400 font-semibold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
@@ -222,13 +260,13 @@ export function YouTubePlayerCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={() => setIsMinimized(!isMinimized)}
+            onClick={toggleMinimized}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            title={isMinimized ? 'Expand Player' : 'Minimize Player'}
+            title={isMinimized ? 'Expand to Theater Stage' : 'Minimize to Corner'}
           >
-            {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+            {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
           </button>
           <button
             onClick={handleClosePlayer}
@@ -241,25 +279,30 @@ export function YouTubePlayerCard({
       </div>
 
       {/* Video Container */}
-      {!isMinimized && (
-        <div className="relative aspect-video w-full bg-black">
-          <YouTube
-            videoId={activeVideo.videoId}
-            opts={opts}
-            onReady={handlePlayerReady}
-            onPlay={handlePlayerPlay}
-            onPause={handlePlayerPause}
-            className="w-full h-full"
-            iframeClassName="w-full h-full"
-          />
-        </div>
-      )}
+      <div
+        className={`relative aspect-video w-full bg-black flex items-center justify-center overflow-hidden ${
+          isFloatingPiP ? 'h-44 sm:h-52' : 'flex-1 min-h-[220px] sm:min-h-[340px] md:min-h-[400px] lg:min-h-[460px]'
+        }`}
+      >
+        <YouTube
+          key={activeVideo.videoId}
+          videoId={activeVideo.videoId}
+          opts={opts}
+          onReady={handlePlayerReady}
+          onPlay={handlePlayerPlay}
+          onPause={handlePlayerPause}
+          className="w-full h-full"
+          iframeClassName="w-full h-full"
+        />
+      </div>
 
       {/* Sync Status Banner */}
-      <div className="px-3 py-1.5 bg-slate-900/90 flex items-center justify-between text-[11px] text-slate-400">
-        <div className="flex items-center gap-1.5">
+      <div className="px-3 sm:px-4 py-2 bg-slate-900/90 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/60">
+        <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-          <span>{isBroadcaster ? 'Room Sync Active (You lead)' : 'Syncing in real-time'}</span>
+          <span className="font-medium text-slate-300">
+            {isBroadcaster ? 'Room Sync Active (Broadcasting)' : 'Synchronized Playback Active'}
+          </span>
         </div>
         <a
           href={`https://www.youtube.com/watch?v=${activeVideo.videoId}`}
@@ -267,7 +310,7 @@ export function YouTubePlayerCard({
           rel="noopener noreferrer"
           className="text-slate-400 hover:text-white flex items-center gap-1 hover:underline text-[10px]"
         >
-          <span>Watch on YT</span>
+          <span>Watch on YouTube</span>
           <ExternalLink className="w-3 h-3" />
         </a>
       </div>

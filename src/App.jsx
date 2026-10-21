@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { AudioStreamsContainer } from './components/AudioStreamsContainer';
 import { YouTubeModal } from './components/YouTubeModal';
 import { YouTubePlayerCard } from './components/YouTubePlayerCard';
+import { WatchPartyStudio } from './components/WatchPartyStudio';
 
 export default function App() {
   const [inRoom, setInRoom] = useState(false);
@@ -27,6 +28,7 @@ export default function App() {
   const [activeRooms, setActiveRooms] = useState([]);
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState(null); // { videoId, title, broadcasterId, isBroadcaster, initialTime, initialIsPlaying }
+  const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const tabId = useMemo(() => 'tab_' + Math.random().toString(36).substring(2, 9), []);
 
   // Check URL query param for direct navigation (?room=xyz or /room/xyz)
@@ -98,6 +100,7 @@ export default function App() {
         return null;
       });
       setIsYouTubeModalOpen(false);
+      setIsPlayerMinimized(false);
 
       // Clean URL without page reload
       if (window.history.pushState) {
@@ -307,6 +310,49 @@ export default function App() {
       setParticipants((prev) =>
         prev.map((p) => (p.socketId === peerId ? { ...p, mediaState } : p))
       );
+
+      // If the current user is watching this peer's stream, follow to the new video!
+      setActiveVideo((current) => {
+        if (!current || current.isBroadcaster || current.broadcasterId !== peerId) {
+          return current;
+        }
+
+        if (!mediaState || !mediaState.videoId) {
+          return null;
+        }
+
+        const elapsed = mediaState.isPlaying
+          ? (Date.now() - (mediaState.updatedAt || Date.now())) / 1000
+          : 0;
+        const currentPartTime = (Number(mediaState.currentTime) || 0) + elapsed;
+
+        return {
+          videoId: mediaState.videoId,
+          title: mediaState.title || current.title,
+          broadcasterId: peerId,
+          isBroadcaster: false,
+          initialTime: currentPartTime,
+          initialIsPlaying: mediaState.isPlaying
+        };
+      });
+    };
+
+    const onPeerYouTubeAction = ({ broadcasterId, action, videoId, title, currentTime }) => {
+      if (action === 'change-video' && videoId) {
+        setActiveVideo((current) => {
+          if (current && !current.isBroadcaster && current.broadcasterId === broadcasterId) {
+            return {
+              videoId,
+              title: title || 'YouTube Video',
+              broadcasterId,
+              isBroadcaster: false,
+              initialTime: Number(currentTime) || 0,
+              initialIsPlaying: true
+            };
+          }
+          return current;
+        });
+      }
     };
 
     const onPeerYouTubeStopped = ({ socketId: peerId }) => {
@@ -335,6 +381,7 @@ export default function App() {
     socket.on('chat-error', onChatError);
     socket.on('active-rooms-updated', onActiveRoomsUpdated);
     socket.on('peer-youtube-updated', onPeerYouTubeUpdated);
+    socket.on('peer-youtube-action', onPeerYouTubeAction);
     socket.on('peer-youtube-stopped', onPeerYouTubeStopped);
 
     // Initial fetch of active rooms
@@ -363,6 +410,7 @@ export default function App() {
       socket.off('chat-error', onChatError);
       socket.off('active-rooms-updated', onActiveRoomsUpdated);
       socket.off('peer-youtube-updated', onPeerYouTubeUpdated);
+      socket.off('peer-youtube-action', onPeerYouTubeAction);
       socket.off('peer-youtube-stopped', onPeerYouTubeStopped);
     };
   }, [initLocalStream, setMutedForcefully]);
@@ -377,6 +425,7 @@ export default function App() {
 
   // YouTube Watch Together Handlers
   const handleStartYouTubeVideo = ({ videoId, title }) => {
+    setIsPlayerMinimized(false);
     setActiveVideo({
       videoId,
       title,
@@ -396,6 +445,7 @@ export default function App() {
       : 0;
     const currentPartTime = (Number(peer.mediaState.currentTime) || 0) + elapsed;
 
+    setIsPlayerMinimized(false);
     setActiveVideo({
       videoId: peer.mediaState.videoId,
       title: peer.mediaState.title,
@@ -407,6 +457,7 @@ export default function App() {
   };
 
   const handleCloseYouTube = () => {
+    setIsPlayerMinimized(false);
     if (activeVideo?.isBroadcaster) {
       const socket = getSocket();
       if (socket && socket.connected && roomId) {
@@ -540,10 +591,10 @@ export default function App() {
         onLeaveRoom={() => handleLeaveRoom(true)}
       />
 
-      {/* Center Participant Grid */}
-      <main className="flex-1 flex flex-col relative z-10 pb-24">
+      {/* Center Main Stage (Dynamic Theater Mode / Standard Centered Grid) */}
+      <main className="flex-1 flex flex-col relative z-10 pb-24 px-3 sm:px-6 lg:px-8 w-full max-w-7xl mx-auto transition-all duration-500 ease-in-out">
         {errorMessage && (
-          <div className="max-w-md mx-auto my-3 px-4 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <div className="max-w-md mx-auto my-2 px-4 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
             <span>{errorMessage}</span>
             <button
               onClick={() => setErrorMessage('')}
@@ -554,21 +605,68 @@ export default function App() {
           </div>
         )}
 
-        <ParticipantGrid
-          participants={participants}
-          currentUserId={currentSocketId}
-          isOwner={isOwner}
-          isSpeakingLocal={isSpeakingLocal}
-          speakingPeers={speakingPeers}
-          isLocalMuted={isMuted}
-          maxParticipants={roomSettings?.maxParticipants || 10}
-          onKick={handleKickUser}
-          onToggleMuteSpeaking={handleToggleMuteSpeaking}
-          onToggleMuteChat={handleToggleMuteChat}
-          onCopyInvite={handleCopyInvite}
-          onTuneInYouTube={handleTuneInYouTube}
-          activeBroadcasterId={activeVideo?.broadcasterId}
-        />
+        {/* Dynamic Studio Layout: Option 2 Studio Watch Party vs. Standard Centered Grid */}
+        {activeVideo && !isPlayerMinimized ? (
+          <WatchPartyStudio
+            participants={participants}
+            currentUserId={currentSocketId}
+            isOwner={isOwner}
+            isSpeakingLocal={isSpeakingLocal}
+            speakingPeers={speakingPeers}
+            isLocalMuted={isMuted}
+            maxParticipants={roomSettings?.maxParticipants || 10}
+            onKick={handleKickUser}
+            onToggleMuteSpeaking={handleToggleMuteSpeaking}
+            onToggleMuteChat={handleToggleMuteChat}
+            onCopyInvite={handleCopyInvite}
+            onTuneInYouTube={handleTuneInYouTube}
+            activeVideo={activeVideo}
+            broadcasterName={activeBroadcasterName}
+            onCloseYouTube={handleCloseYouTube}
+            onToggleMinimize={() => setIsPlayerMinimized(true)}
+            socket={getSocket()}
+            roomId={roomId}
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            ownerSocketId={roomSettings?.ownerSocketId}
+            isChatAllowed={roomSettings?.allowChat ?? true}
+            isUserChatMuted={currentParticipant?.isChatMuted ?? false}
+          />
+        ) : (
+          /* Normal State: Centered Full-Width Grid */
+          <div className="flex-1 flex flex-col justify-center transition-all duration-500 ease-in-out">
+            <ParticipantGrid
+              participants={participants}
+              currentUserId={currentSocketId}
+              isOwner={isOwner}
+              isSpeakingLocal={isSpeakingLocal}
+              speakingPeers={speakingPeers}
+              isLocalMuted={isMuted}
+              maxParticipants={roomSettings?.maxParticipants || 10}
+              onKick={handleKickUser}
+              onToggleMuteSpeaking={handleToggleMuteSpeaking}
+              onToggleMuteChat={handleToggleMuteChat}
+              onCopyInvite={handleCopyInvite}
+              onTuneInYouTube={handleTuneInYouTube}
+              activeBroadcasterId={activeVideo?.broadcasterId}
+              compact={false}
+            />
+
+            {/* If video is minimized, render as floating PiP card in the corner */}
+            {activeVideo && isPlayerMinimized && (
+              <YouTubePlayerCard
+                activeVideo={activeVideo}
+                broadcasterName={activeBroadcasterName}
+                onClose={handleCloseYouTube}
+                socket={getSocket()}
+                roomId={roomId}
+                isMinimized={true}
+                onToggleMinimize={() => setIsPlayerMinimized(false)}
+                embedded={false}
+              />
+            )}
+          </div>
+        )}
       </main>
 
       {/* Ephemeral Chat Drawer */}
@@ -615,19 +713,12 @@ export default function App() {
         onToggleMuteChat={handleToggleMuteChat}
       />
 
-      {/* YouTube Watch Together Modal & Player */}
+      {/* YouTube Watch Together Modal */}
       <YouTubeModal
         isOpen={isYouTubeModalOpen}
         onClose={() => setIsYouTubeModalOpen(false)}
         onSelectVideo={handleStartYouTubeVideo}
         socket={getSocket()}
-      />
-      <YouTubePlayerCard
-        activeVideo={activeVideo}
-        broadcasterName={activeBroadcasterName}
-        onClose={handleCloseYouTube}
-        socket={getSocket()}
-        roomId={roomId}
       />
 
       {/* Audio Element stream attachments (hidden) */}
