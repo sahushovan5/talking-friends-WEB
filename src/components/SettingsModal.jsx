@@ -84,7 +84,7 @@ export function SettingsModal({
               </div>
               <input
                 type="range"
-                min="2"
+                min="1"
                 max="10"
                 step="1"
                 value={maxParticipants}

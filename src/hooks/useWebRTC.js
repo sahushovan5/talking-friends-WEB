@@ -9,7 +9,7 @@ const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
  */
 export function useWebRTC({ roomId, isRoomActive, currentUserId, onKicked }) {
   const [localStream, setLocalStream] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // Default to muted upon joining
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [speakingPeers, setSpeakingPeers] = useState({}); // { [peerId]: boolean }
   const [audioDevices, setAudioDevices] = useState([]);
@@ -26,7 +26,7 @@ export function useWebRTC({ roomId, isRoomActive, currentUserId, onKicked }) {
   const localSourceRef = useRef(null);
   const animFrameRef = useRef(null);
   const localStreamRef = useRef(null);
-  const isMutedRef = useRef(false);
+  const isMutedRef = useRef(true); // Default to muted upon joining
 
   // Keep ref updated
   useEffect(() => {
@@ -531,6 +531,8 @@ export function useWebRTC({ roomId, isRoomActive, currentUserId, onKicked }) {
     setAudioStreams({});
     setSpeakingPeers({});
     setIsSpeakingLocal(false);
+    setIsMuted(true);
+    isMutedRef.current = true;
   }, []);
 
   return {

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { getSocket, connectSocket, disconnectSocket } from './services/socket';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { getSocket, connectSocket, disconnectSocket, getBrowserId } from './services/socket';
 import { useWebRTC } from './hooks/useWebRTC';
 import { Lobby } from './components/Lobby';
 import { RoomHeader } from './components/RoomHeader';
@@ -22,6 +22,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [currentSocketId, setCurrentSocketId] = useState('');
+  const [activeRooms, setActiveRooms] = useState([]);
+  const tabId = useMemo(() => 'tab_' + Math.random().toString(36).substring(2, 9), []);
 
   // Check URL query param for direct navigation (?room=xyz or /room/xyz)
   useEffect(() => {
@@ -37,9 +39,14 @@ export default function App() {
     }
   }, []);
 
+  // Reference to handleLeaveRoom to avoid circular hook initialization / TDZ issues
+  const leaveRoomRef = useRef(null);
+
   const handleKicked = useCallback((reason) => {
     setErrorMessage(reason || 'You were kicked from the room.');
-    handleLeaveRoom(false);
+    if (leaveRoomRef.current) {
+      leaveRoomRef.current(false);
+    }
   }, []);
 
   // WebRTC Audio Mesh Hook
@@ -62,17 +69,6 @@ export default function App() {
     currentUserId: currentSocketId,
     onKicked: handleKicked
   });
-
-  // Check if current user is room owner
-  const isOwner = useMemo(() => {
-    if (!roomSettings || !currentSocketId) return false;
-    return roomSettings.ownerSocketId === currentSocketId;
-  }, [roomSettings, currentSocketId]);
-
-  // Current participant object
-  const currentParticipant = useMemo(() => {
-    return participants.find((p) => p.socketId === currentSocketId) || null;
-  }, [participants, currentSocketId]);
 
   // Leave room logic
   const handleLeaveRoom = useCallback(
@@ -100,6 +96,45 @@ export default function App() {
     [roomId, cleanupWebRTC]
   );
 
+  // Keep leaveRoomRef in sync
+  leaveRoomRef.current = handleLeaveRoom;
+
+  // Listen for other tabs in the same browser joining a room (1 browser = 1 room)
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel('echomesh_browser_sync');
+
+    channel.onmessage = (event) => {
+      const { type, roomId: newRoomId, tabId: senderTabId } = event.data || {};
+      if (type === 'ROOM_JOINED' && senderTabId !== tabId) {
+        setInRoom((currentlyInRoom) => {
+          if (currentlyInRoom) {
+            setErrorMessage(`Disconnected: You joined room "${newRoomId}" in another tab. Only 1 room per browser is allowed.`);
+            if (leaveRoomRef.current) {
+              leaveRoomRef.current(false);
+            }
+          }
+          return false;
+        });
+      }
+    };
+
+    return () => {
+      channel.close();
+    };
+  }, [tabId]);
+
+  // Check if current user is room owner
+  const isOwner = useMemo(() => {
+    if (!roomSettings || !currentSocketId) return false;
+    return roomSettings.ownerSocketId === currentSocketId;
+  }, [roomSettings, currentSocketId]);
+
+  // Current participant object
+  const currentParticipant = useMemo(() => {
+    return participants.find((p) => p.socketId === currentSocketId) || null;
+  }, [participants, currentSocketId]);
+
   // Setup Socket listeners for room & chat lifecycle
   useEffect(() => {
     const socket = connectSocket();
@@ -121,6 +156,15 @@ export default function App() {
         console.warn('Microphone permission denied or unavailable:', err);
       });
 
+      // Broadcast to other tabs in this browser (1 browser = 1 room)
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          const syncChannel = new BroadcastChannel('echomesh_browser_sync');
+          syncChannel.postMessage({ type: 'ROOM_JOINED', roomId: data.roomId, tabId });
+          syncChannel.close();
+        } catch (e) {}
+      }
+
       // Update URL query param for quick sharing
       if (window.history.pushState) {
         const newUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(
@@ -138,10 +182,19 @@ export default function App() {
       setRoomSettings(data.roomSettings);
       setInRoom(true);
 
-      // Initialize local microphone
+      // Initialize local microphone (starts muted)
       initLocalStream().catch((err) => {
         console.warn('Microphone permission denied or unavailable:', err);
       });
+
+      // Broadcast to other tabs in this browser (1 browser = 1 room)
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          const syncChannel = new BroadcastChannel('echomesh_browser_sync');
+          syncChannel.postMessage({ type: 'ROOM_JOINED', roomId: data.roomId, tabId });
+          syncChannel.close();
+        } catch (e) {}
+      }
 
       // Update URL query param for quick sharing
       if (window.history.pushState) {
@@ -197,7 +250,9 @@ export default function App() {
           if (p.socketId === targetId) {
             return {
               ...p,
-              ...(typeof muteSpeaking === 'boolean' ? { isMuted: muteSpeaking } : {}),
+              ...(typeof muteSpeaking === 'boolean'
+                ? { isMuted: muteSpeaking, isMutedByHost: muteSpeaking }
+                : {}),
               ...(typeof muteChat === 'boolean' ? { isChatMuted: muteChat } : {})
             };
           }
@@ -233,6 +288,10 @@ export default function App() {
       setErrorMessage(message);
     };
 
+    const onActiveRoomsUpdated = (roomsList) => {
+      setActiveRooms(roomsList || []);
+    };
+
     socket.on('connect', onConnect);
     socket.on('room-created', onRoomCreated);
     socket.on('room-joined', onRoomJoined);
@@ -245,6 +304,14 @@ export default function App() {
     socket.on('user-audio-state-changed', onUserAudioStateChanged);
     socket.on('new-message', onNewMessage);
     socket.on('chat-error', onChatError);
+    socket.on('active-rooms-updated', onActiveRoomsUpdated);
+
+    // Initial fetch of active rooms
+    socket.emit('get-active-rooms', (res) => {
+      if (res && res.rooms) {
+        setActiveRooms(res.rooms);
+      }
+    });
 
     if (socket.connected) {
       setCurrentSocketId(socket.id);
@@ -263,6 +330,7 @@ export default function App() {
       socket.off('user-audio-state-changed', onUserAudioStateChanged);
       socket.off('new-message', onNewMessage);
       socket.off('chat-error', onChatError);
+      socket.off('active-rooms-updated', onActiveRoomsUpdated);
     };
   }, [initLocalStream, setMutedForcefully]);
 
@@ -271,10 +339,11 @@ export default function App() {
     setIsLoading(true);
     setErrorMessage('');
     const socket = connectSocket();
+    const browserId = getBrowserId();
 
     socket.emit(
       'create-room',
-      { username, maxParticipants },
+      { username, maxParticipants, browserId },
       (response) => {
         if (response && !response.success) {
           setIsLoading(false);
@@ -289,10 +358,11 @@ export default function App() {
     setIsLoading(true);
     setErrorMessage('');
     const socket = connectSocket();
+    const browserId = getBrowserId();
 
     socket.emit(
       'join-room',
-      { roomId: targetRoomId, username },
+      { roomId: targetRoomId, username, browserId },
       (response) => {
         if (response && !response.success) {
           setIsLoading(false);
@@ -360,6 +430,7 @@ export default function App() {
       <Lobby
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        activeRooms={activeRooms}
         initialRoomId={initialRoomId}
         isLoading={isLoading}
         error={errorMessage}
@@ -368,7 +439,7 @@ export default function App() {
   }
 
   const isSpeakingDisabled =
-    roomSettings?.allowSpeaking === false || currentParticipant?.isMuted === true;
+    roomSettings?.allowSpeaking === false || currentParticipant?.isMutedByHost === true;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-between relative overflow-hidden select-none">
