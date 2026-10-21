@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import YouTube from 'react-youtube';
 import {
-  Youtube,
   X,
   Maximize2,
   Minimize2,
@@ -10,6 +9,7 @@ import {
   ExternalLink,
   Users
 } from 'lucide-react';
+import { YouTubeIcon } from './YouTubeIcon';
 
 export function YouTubePlayerCard({
   activeVideo, // { videoId, title, broadcasterId, isBroadcaster, initialTime, initialIsPlaying }
@@ -200,7 +200,7 @@ export function YouTubePlayerCard({
       <div className="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1 rounded-lg bg-red-600/20 text-red-500">
-            <Youtube className="w-4 h-4 fill-red-500" />
+            <YouTubeIcon className="w-4 h-4 flex-shrink-0" />
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-white truncate max-w-[220px] sm:max-w-[280px]">

@@ -620,6 +620,7 @@ export default function App() {
         isOpen={isYouTubeModalOpen}
         onClose={() => setIsYouTubeModalOpen(false)}
         onSelectVideo={handleStartYouTubeVideo}
+        socket={getSocket()}
       />
       <YouTubePlayerCard
         activeVideo={activeVideo}

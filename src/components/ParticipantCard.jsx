@@ -8,9 +8,9 @@ import {
   MessageSquareOff,
   UserX,
   ShieldAlert,
-  Youtube,
   Play
 } from 'lucide-react';
+import { YouTubeIcon } from './YouTubeIcon';
 
 // Generates consistent soft gradient background based on username string
 function getAvatarGradient(name = '') {
@@ -165,7 +165,7 @@ export function ParticipantCard({
             }`}
             title={`Tune in to ${username}'s YouTube stream`}
           >
-            <Youtube className="w-3.5 h-3.5 fill-current flex-shrink-0" />
+            <YouTubeIcon className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate max-w-[120px]">
               {isTunedIntoThisUser ? 'Synced & Watching' : mediaState.title || 'Watch Stream'}
             </span>

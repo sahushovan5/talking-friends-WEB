@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SIGNALING_SERVER_URL =
+export const SIGNALING_SERVER_URL =
   import.meta.env.VITE_SIGNALING_URL ||
   (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
     ? window.location.origin
