@@ -265,7 +265,7 @@ export default function App() {
             return {
               ...p,
               ...(typeof muteSpeaking === 'boolean'
-                ? { isMuted: muteSpeaking, isMutedByHost: muteSpeaking }
+                ? { isMuted: muteSpeaking, isMutedByHost: false }
                 : {}),
               ...(typeof muteChat === 'boolean' ? { isChatMuted: muteChat } : {})
             };
@@ -274,7 +274,7 @@ export default function App() {
         })
       );
 
-      // If we are the target user, enforce mute
+      // If we are the target user, enforce mute but do not lock mic
       if (targetId === socket.id) {
         if (typeof muteSpeaking === 'boolean') {
           setMutedForcefully(muteSpeaking);
@@ -284,7 +284,11 @@ export default function App() {
 
     const onUserAudioStateChanged = ({ socketId: peerId, isMuted: peerMuted }) => {
       setParticipants((prev) =>
-        prev.map((p) => (p.socketId === peerId ? { ...p, isMuted: peerMuted } : p))
+        prev.map((p) =>
+          p.socketId === peerId
+            ? { ...p, isMuted: peerMuted, isMutedByHost: false }
+            : p
+        )
       );
     };
 
@@ -571,8 +575,7 @@ export default function App() {
     );
   }
 
-  const isSpeakingDisabled =
-    roomSettings?.allowSpeaking === false || currentParticipant?.isMutedByHost === true;
+  const isSpeakingDisabled = roomSettings?.allowSpeaking === false;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-between relative overflow-hidden select-none">
